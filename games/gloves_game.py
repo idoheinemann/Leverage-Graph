@@ -1,6 +1,8 @@
 from _types import Coalition, Value, Payoff
 from games.coop_game import CoopGame
 
+import numpy as np
+
 
 class GlovesGame(CoopGame):
     def __init__(self, players_amount: int, left_amount: int):
@@ -18,13 +20,13 @@ class GlovesGame(CoopGame):
     def shapely_values(self, coalition: Coalition) -> Payoff:
         left = self.left & coalition
         right = self.right & coalition
+        payoff = np.zeros(self.players_amount)
         if len(left) == 0 or len(right) == 0:
-            return {p: 0 for p in coalition}
+            return payoff
         left_opens = len(left) / len(coalition)
         right_opens = len(right) / len(coalition)
         left_value = right_opens / len(left)
         right_value = left_opens / len(right)
-        payoff = {}
         for i in coalition:
             payoff[i] = left_value if i in left else right_value
         return payoff

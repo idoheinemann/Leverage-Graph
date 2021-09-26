@@ -1,6 +1,7 @@
-from typing import Set, Union, Dict
+from typing import Set, Union
+import numpy as np
 
 Player = int
 Coalition = Set[Player]
 Value = Union[int, float]
-Payoff = Dict[Player, Value]
+Payoff = np.ndarray

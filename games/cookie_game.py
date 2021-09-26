@@ -13,5 +13,5 @@ class CookieGame(CoopGame):
 
 
 if __name__ == '__main__':
-    game = ShoesGame(5, 3)
+    game = CookieGame(5, 3, 7, 1)
     print(game.shapely_values(game.grand_coalition))

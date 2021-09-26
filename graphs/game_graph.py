@@ -1,9 +1,9 @@
 import itertools
-from typing import Optional, Set
+from typing import Optional, Set, Dict
 
 from _types import Coalition, Player, Value, Payoff
 from games.coop_game import CoopGame
-from tools import normalize_payoff, add_payoff, mul_payoff
+from tools import normalize_payoff
 
 
 class GameNode:
@@ -13,7 +13,7 @@ class GameNode:
             self.payoff = game.shapely_values(coalition)
         else:
             self.payoff = payoff
-        self.value = sum(self.payoff.values())
+        self.value = self.payoff.sum()
         self.children = set()
         self.parents = set()
         if parent is not None:
@@ -22,41 +22,36 @@ class GameNode:
 
     @property
     def round_payoff(self) -> Payoff:
-        return {p[0]: round(p[1], 2) for p in self.payoff.items()}
+        return self.payoff.round(2)
 
-    def get_payoff(self, player: Player) -> Value:
-        if player in self.coalition:
-            return self.payoff[player]
-        return 0
-
-    def get_payoff_round(self, player: Player) -> Value:
-        if player in self.coalition:
-            return self.round_payoff[player]
-        return 0
+    @property
+    def payoff_dict(self) -> Dict[Player, Value]:
+        round_payoff = self.round_payoff
+        return {i: round_payoff[i] for i in self.coalition}
 
     def loosely_dominates(self, other: 'GameNode') -> bool:
         found_pref = False
         for i in self.coalition:
-            if self.round_payoff[i] < other.get_payoff_round(i):
+            if self.round_payoff[i] < other.round_payoff[i]:
                 return False  # no one dislikes the situation
-            if self.round_payoff[i] > other.get_payoff_round(i):
+            if self.round_payoff[i] > other.round_payoff[i]:
                 found_pref = True  # at least one person prefers it
         return found_pref
 
     def strictly_dominates(self, other: 'GameNode') -> bool:
         for i in self.coalition:
-            if self.round_payoff[i] <= other.get_payoff_round(i):
+            if self.round_payoff[i] <= other.round_payoff[i]:
                 return False  # if someone doesn't prefer this
         return True
 
     def better_or_equal(self, other: 'GameNode'):
         for i in self.coalition:
-            if self.round_payoff[i] < other.get_payoff_round(i):
+            if self.round_payoff[i] < other.round_payoff[i]:
                 return False  # no one dislikes the situation
         return True
 
     def __str__(self):
-        return f'GameNode(coalition={self.coalition}, payoff={self.round_payoff})'
+        return f'GameNode(coalition={self.coalition}, payoff={self.payoff_dict})'
 
     __repr__ = __str__
 
@@ -76,12 +71,12 @@ class GameGraph:
                     iter_nodes = iter(all_nodes)
                     first = next(iter_nodes)
                     for k in iter_nodes:
-                        add_payoff(first.payoff, k.payoff)
+                        first.payoff += k.payoff
                         first.parents |= k.parents
                         for parent in k.parents:
                             parent.children.remove(k)
                             parent.children.add(first)
-                    mul_payoff(first.payoff, 1 / len(all_nodes))
+                    first.payoff /= len(all_nodes)
         self.game_set = None
 
     def search_down(self, coalition: Coalition, start_node: Optional[GameNode] = None) -> Optional[GameNode]:
@@ -128,7 +123,7 @@ class GameGraph:
             sub_coalition = node.coalition - {player}
             parents_set = self._to_set_up(node)
             payoff = self.game.shapely_values(sub_coalition)
-            value = sum(payoff.values())
+            value = payoff.sum()
             current = node
             for i in parents_set:
                 if i.loosely_dominates(current):
@@ -139,15 +134,13 @@ class GameGraph:
             if diff >= 0:
                 normal = normalize_payoff(payoff)
                 payoff = current.payoff.copy()
-                for i in sub_coalition:
-                    payoff[i] += normal[i] * diff
+                payoff += normal * diff
                 for i in non_existing:
-                    del payoff[i]
+                    payoff[i] = 0
             else:
                 pass
                 # not everyone have incentive to remove player
-                # for i in payoff:
-                #    payoff[i] = 0
+                # payoff = np.zeros(self.game.players_amount)
             new_node = GameNode(self.game, sub_coalition, node, payoff=payoff)
             self._recursive_make_nodes(new_node)
 
@@ -212,7 +205,7 @@ class GameGraph:
             other_state = other.search_down(state.coalition)
             if other_state is None:
                 return False
-            if other_state.round_payoff != state.round_payoff:
+            if other_state.payoff_dict != state.payoff_dict:
                 return False
         return True
 
