@@ -19,7 +19,8 @@ class LeverageGraph(GameGraph):
                            player in x.coalition and x.payoff[player] >= state.payoff[player]}
         all_where_credible: Set[GameNode] = set()
         for i in all_with_player:
-            sum_of_losses = sum(max(state.payoff[x] - i.payoff[x], 0) for x in i.coalition & state.coalition)
+            sum_of_losses = sum(
+                max(state.payoff[x] - i.payoff[x], 0) for x in i.coalition & state.coalition - {opponent})
             # sum of losses of all players who's agreement is needed in order to switch from state to i
             if sum_of_losses <= i.payoff[player] - state.payoff[player]:
                 # if player can make up the losses of all players
@@ -49,7 +50,7 @@ class LeverageGraph(GameGraph):
                 else:
                     # if there is no overlap, player must pay the difference to all players in j in order
                     # to prevent offers from opponent
-                    accumulated = player_marginal - sum(j.payoff[x] for x in j.coalition) + i.payoff[opponent]
+                    accumulated = player_marginal - j.value + i.payoff[opponent]
                     if accumulated < 0:
                         # player cant prevent moving to j
                         accumulated = 0
