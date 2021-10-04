@@ -108,7 +108,7 @@ class LeverageGraph(GameGraph):
         for state in self.to_set():
             if len(state.coalition) == 1:
                 continue
-            state_copy = new_tree.search_down(state.coalition)
+            state_copy = new_tree.search(state.coalition)
             leverage_vector = self.get_leverage_vector(state)
             for player in leverage_vector:
                 max_pay = max(leverage_vector[player])
@@ -142,7 +142,7 @@ class LeverageGraph(GameGraph):
         base_tree = trees.pop()
         for i in trees:
             for j in i.to_set():
-                base_tree.search_down(j.coalition).payoff += j.payoff
+                base_tree.search(j.coalition).payoff += j.payoff
         for i in base_tree.to_set():
             i.payoff /= len(trees) + 1
         return base_tree
@@ -156,7 +156,7 @@ class LeverageGraph(GameGraph):
         base_tree = self.deepcopy()
         for i in trees:
             for j in i.to_set():
-                base_tree.search_down(j.coalition).payoff += j.payoff
+                base_tree.search(j.coalition).payoff += j.payoff
         for i in base_tree.to_set():
             i.payoff /= len(trees) + 1
         return base_tree

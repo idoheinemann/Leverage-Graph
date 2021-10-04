@@ -17,7 +17,7 @@ class CoopGame(abc.ABC):
         pass
 
     def added_value(self, coalition: Coalition, player: Player) -> Value:
-        return self.value(coalition | {player}) - self.value(coalition)
+        return self.value(coalition | {player}) - self.value(coalition - {player})
 
     def shapely_values(self, coalition: Coalition) -> Payoff:
         payoffs = np.zeros(self.players_amount)
