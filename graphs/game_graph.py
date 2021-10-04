@@ -22,7 +22,7 @@ class GameGraph:
             game_list = list(self.to_set())
             merge_dict = {}
             i = 0
-            while i < len(game_list)-1:
+            while i < len(game_list) - 1:
                 j = i + 1
                 merge_dict[game_list[i]] = []
                 while j < len(game_list):
@@ -74,6 +74,10 @@ class GameGraph:
                     return val
         return None
 
+    def _find_all_nodes(self, coalition: Coalition, start_node: GameNode = None) -> Set[GameNode]:
+        return self._find_all_nodes_down(coalition, start_node) | \
+               self._find_all_nodes_up(coalition, start_node)
+
     def _find_all_nodes_up(self, coalition: Coalition, start_node: GameNode = None, found_set=None) -> Set[GameNode]:
         if found_set is None:
             found_set = set()
@@ -100,9 +104,9 @@ class GameGraph:
                 self._find_all_nodes_down(coalition, i, found_set=found_set)
         return found_set
 
-    def _find_all_nodes(self, coalition: Coalition, start_node: GameNode = None, found_set=None) -> Set[GameNode]:
-        return self._find_all_nodes_down(coalition, start_node, found_set) or \
-               self._find_all_nodes_up(coalition, start_node, found_set)
+    def _recursive_make_nodes(self, node: GameNode):
+        self._recursive_make_nodes_up(node)
+        self._recursive_make_nodes_down(node)
 
     def _recursive_make_nodes_up(self, node: GameNode):
         for player in self.game.grand_coalition - node.coalition:
@@ -149,25 +153,10 @@ class GameGraph:
             new_node = GameNode(self.game, sub_coalition, node, payoff=payoff)
             self._recursive_make_nodes_down(new_node)
 
-    def _recursive_make_nodes(self, node: GameNode):
-        self._recursive_make_nodes_up(node)
-        self._recursive_make_nodes_down(node)
-
     def to_set(self) -> Set[GameNode]:
         if self.game_set is None:
             self.game_set = self.to_set_down() | self.to_set_up()
         return self.game_set
-
-    def to_set_down(self, node: GameNode = None, existing: Optional[Set[GameNode]] = None) -> Set[GameNode]:
-        if node is None:
-            node = self.root
-        if existing is None:
-            existing = {node}
-        for i in node.children:
-            if i not in existing:
-                existing.add(i)
-                self.to_set_down(i, existing)
-        return existing
 
     def to_set_up(self, node: GameNode = None, existing: Optional[Set[GameNode]] = None) -> Set[GameNode]:
         if node is None:
@@ -178,6 +167,17 @@ class GameGraph:
             if i not in existing:
                 existing.add(i)
                 self.to_set_up(i, existing)
+        return existing
+
+    def to_set_down(self, node: GameNode = None, existing: Optional[Set[GameNode]] = None) -> Set[GameNode]:
+        if node is None:
+            node = self.root
+        if existing is None:
+            existing = {node}
+        for i in node.children:
+            if i not in existing:
+                existing.add(i)
+                self.to_set_down(i, existing)
         return existing
 
     def strictly_dominant_set(self) -> Set[GameNode]:
@@ -202,12 +202,29 @@ class GameGraph:
                 states.remove(i)
         return states
 
+    def better_or_equal_set(self) -> Set[GameNode]:
+        states = self.to_set().copy()
+        for i, j in itertools.combinations(self.to_set(), 2):
+            if not (i.coalition & j.coalition):
+                continue
+            if i.better_or_equal(j) and j in states:
+                states.remove(j)
+            if j.better_or_equal(i) and i in states:
+                states.remove(i)
+        return states
+
     def deepcopy(self) -> 'GameGraph':
         from copy import deepcopy
         return deepcopy(self)
 
-    def all_strictly_dominant(self, node: GameNode):
+    def all_strictly_dominant(self, node: GameNode) -> Set[GameNode]:
         return {i for i in self.to_set() if i.strictly_dominates(node)}
+
+    def all_loosely_dominant(self, node: GameNode) -> Set[GameNode]:
+        return {i for i in self.to_set() if i.loosely_dominates(node)}
+
+    def all_better_or_equal(self, node: GameNode) -> Set[GameNode]:
+        return {i for i in self.to_set() if i.better_or_equal(node)}
 
     def __eq__(self, other: 'GameGraph') -> bool:
         if len(other.to_set()) != len(self.to_set()):
