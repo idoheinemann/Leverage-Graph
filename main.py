@@ -5,8 +5,8 @@ from graphs.leverage_graph import LeverageGraph
 
 
 def main():
-    game = PipelineGame(4, 2, 3)
-    tree = LeverageGraph(game, leverage_epsilon=0.01)
+    game = PipelineGame(2, 2)
+    tree = LeverageGraph(game, leverage_epsilon=0.01, coalition={0, 1, 2}, complete_missing_states=True)
     print(tree.strictly_dominant_set())
     lev = tree.evaluate_leverage()
     print(lev.strictly_dominant_set())

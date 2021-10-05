@@ -18,32 +18,36 @@ class GameGraph:
         self.set_non_profitable_to_zero = set_non_profitable_to_zero
         self.root = GameNode(game, coalition, payoff=payoff)
         self._recursive_make_nodes(self.root)
+        self._game_set = None
         if merge_same_coalition:
-            game_list = list(self.to_set())
-            merge_dict = {}
-            i = 0
-            while i < len(game_list) - 1:
-                j = i + 1
-                merge_dict[game_list[i]] = []
-                while j < len(game_list):
-                    if game_list[i].coalition == game_list[j].coalition:
-                        merge_dict[game_list[i]].append(game_list.pop(j))
-                    else:
-                        j += 1
-                i += 1
-            for first in merge_dict:
-                for k in merge_dict[first]:
-                    first.payoff += k.payoff
-                    first.parents |= k.parents
-                    first.children |= k.children
-                    for parent in k.parents:
-                        parent.children.remove(k)
-                        parent.children.add(first)
-                    for child in k.children:
-                        child.parents.remove(k)
-                        child.parents.add(first)
-                first.payoff /= len(merge_dict[first]) + 1
-        self.game_set = None
+            self._merge_same_coalition()
+        self._game_set = None
+
+    def _merge_same_coalition(self):
+        game_list = list(self.to_set())
+        merge_dict = {}
+        i = 0
+        while i < len(game_list) - 1:
+            j = i + 1
+            merge_dict[game_list[i]] = []
+            while j < len(game_list):
+                if game_list[i].coalition == game_list[j].coalition:
+                    merge_dict[game_list[i]].append(game_list.pop(j))
+                else:
+                    j += 1
+            i += 1
+        for first in merge_dict:
+            for k in merge_dict[first]:
+                first.payoff += k.payoff
+                first.parents |= k.parents
+                first.children |= k.children
+                for parent in k.parents:
+                    parent.children.remove(k)
+                    parent.children.add(first)
+                for child in k.children:
+                    child.parents.remove(k)
+                    child.parents.add(first)
+            first.payoff /= len(merge_dict[first]) + 1
 
     def search(self, coalition: Coalition, start_node: GameNode = None) -> Optional[GameNode]:
         return self.search_down(coalition, start_node) or self.search_up(coalition, start_node)
@@ -67,7 +71,7 @@ class GameGraph:
         if start_node.coalition == coalition:
             return start_node
         for i in start_node.parents:
-            if len(i.coalition - coalition) != 0:
+            if len(i.coalition - coalition) == 0:
                 # if some element belongs to i but not to the coalition no parent of i can represent the coalition
                 val = self.search_up(coalition, i)
                 if val is not None:
@@ -111,6 +115,8 @@ class GameGraph:
     def _recursive_make_nodes_up(self, node: GameNode):
         for player in self.game.grand_coalition - node.coalition:
             super_coalition = node.coalition | {player}
+            if self.search_up(super_coalition, node):
+                continue  # coalition already exists
             payoff = self.game.shapely_values(super_coalition)
             value = payoff.sum()
             diff = value - node.value
@@ -132,6 +138,8 @@ class GameGraph:
             return
         for player in node.coalition:
             sub_coalition = node.coalition - {player}
+            if self.search_down(sub_coalition, node):
+                continue  # coalition already exists
             parents_set = self.to_set_up(node)
             payoff = self.game.shapely_values(sub_coalition)
             value = payoff.sum()
@@ -154,9 +162,9 @@ class GameGraph:
             self._recursive_make_nodes_down(new_node)
 
     def to_set(self) -> Set[GameNode]:
-        if self.game_set is None:
-            self.game_set = self.to_set_down() | self.to_set_up()
-        return self.game_set
+        if self._game_set is None:
+            self._game_set = self.to_set_down() | self.to_set_up()
+        return self._game_set
 
     def to_set_up(self, node: GameNode = None, existing: Optional[Set[GameNode]] = None) -> Set[GameNode]:
         if node is None:

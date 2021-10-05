@@ -10,34 +10,70 @@ import numpy as np
 
 
 class LeverageGraph(GameGraph):
-    def __init__(self, game: CoopGame, *args, leverage_epsilon: Value = 0, **kwargs):
+    def __init__(self, game: CoopGame, *args, leverage_epsilon: Value = 0,
+                 threat_help_epsilon: Value = 0, complete_missing_states=False, **kwargs):
         GameGraph.__init__(self, game, *args, **kwargs)
         self.leverage_epsilon = leverage_epsilon
+        self.threat_help_epsilon = threat_help_epsilon
+        if complete_missing_states:
+            root = self.root
+            while len(root.parents) != 0:
+                root = next(iter(root.parents))
+            self.root = root
+            self._recursive_make_nodes_down(self.root)
+            self._merge_same_coalition()
+            self._game_set = None
 
-    def threat_states(self, state: GameNode, player: Player, opponent: Player) -> Set[Tuple[GameNode, Value]]:
+    def filter_incredible_states(self, state: GameNode, player: Player, opponent: Player,
+                                 threat_states: Set[GameNode]) -> Set[GameNode]:
+        all_where_credible: Set[GameNode] = set()
+        for new_state in threat_states:
+            if state is new_state:
+                continue
+            sum_of_losses = sum(
+                max(state.payoff[x] - new_state.payoff[x], 0) for x in
+                new_state.coalition & state.coalition - {opponent})
+            # all losses accumulated by all players except opponent
+            sum_of_gains = sum(
+                max(new_state.payoff[x] - state.payoff[x] - (self.threat_help_epsilon if x != player else 0), 0) for x
+                in new_state.coalition - {opponent})
+            # all gains accumulated by all players except opponent
+
+            # sum of losses of all players who's agreement is needed in order to switch from state to new_state
+            # must be less then the sum of gains of all players who's agreement is necessary
+            # because that would mean that the gaining players can make up for the losses and still come out on top
+            if sum_of_losses <= sum_of_gains:
+                # if player can make up the losses of all players
+                all_where_credible.add(new_state)
+
+        return all_where_credible
+
+    def credible_passable_states(self, state: GameNode, player: Player, opponent: Player) -> Set[GameNode]:
+        """
+        finds all states to which player can threaten opponent to switch to
+        regardless of whether opponent can block that threat with a counter threat
+        :param state:
+        :param player:
+        :param opponent:
+        :return:
+        """
         all_with_player = {x for x in self.to_set() if
                            player in x.coalition and x.payoff[player] >= state.payoff[player]}
-        all_where_credible: Set[GameNode] = set()
-        for i in all_with_player:
-            sum_of_losses = sum(
-                max(state.payoff[x] - i.payoff[x], 0) for x in i.coalition & state.coalition - {opponent})
-            # sum of losses of all players who's agreement is needed in order to switch from state to i
-            if sum_of_losses <= i.payoff[player] - state.payoff[player]:
-                # if player can make up the losses of all players
-                all_where_credible.add(i)
+        return self.filter_incredible_states(state, player, opponent, all_with_player)
 
-        all_where_credible.remove(state)
+    def threat_states(self, state: GameNode, player: Player, opponent: Player) -> Set[Tuple[GameNode, Value]]:
+        all_where_credible = self.credible_passable_states(state, player, opponent)
         all_without_player = {x for x in self.to_set() if opponent in x.coalition and player not in x.coalition}
         filtered_credible = set()
         for i in all_where_credible:
             # how much the player can demand from the opponent
             # by telling him that he'll switch from state to i if he does not comply
-            threat = state.payoff[opponent] - i.payoff[opponent] - self.leverage_epsilon
-            if threat <= 0:
+            init_treat = state.payoff[opponent] - i.payoff[opponent] - self.leverage_epsilon
+            if init_treat <= 0:
                 continue
-            init_treat = threat
+            threat = init_treat
+            player_marginal = i.payoff[player] - state.payoff[player]
             for j in all_without_player:
-                player_marginal = i.payoff[player] - state.payoff[player]
                 # sum of how much each player prefers i to j
                 # and how much player can add to them while remaining profitable
                 # in order to counter any offer from opponent
@@ -158,5 +194,5 @@ class LeverageGraph(GameGraph):
             for j in i.to_set():
                 base_tree.search(j.coalition).payoff += j.payoff
         for i in base_tree.to_set():
-            i.payoff /= len(trees) + 1
+            i.payoff /= iterations + 1
         return base_tree
