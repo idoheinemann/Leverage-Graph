@@ -11,10 +11,12 @@ import numpy as np
 
 class LeverageGraph(GameGraph):
     def __init__(self, game: CoopGame, *args, leverage_epsilon: Value = 0,
-                 threat_help_epsilon: Value = 0, complete_missing_states=False, **kwargs):
+                 threat_help_epsilon: Value = 0, threat_enable_epsilon: Value = 0, complete_missing_states=False,
+                 **kwargs):
         GameGraph.__init__(self, game, *args, **kwargs)
         self.leverage_epsilon = leverage_epsilon
         self.threat_help_epsilon = threat_help_epsilon
+        self.threat_enable_epsilon = threat_enable_epsilon
         if complete_missing_states:
             root = self.root
             while len(root.parents) != 0:
@@ -24,19 +26,42 @@ class LeverageGraph(GameGraph):
             self._merge_same_coalition()
             self._game_set = None
 
+    def sum_of_losses(self, state: GameNode, new_state: GameNode, player: Player, opponent: Player) -> Value:
+        """
+        the collective losses for players from joining the new coalition (except for opponent)
+        if the player wants to move to the new state, he will need to somehow make up for that collective loss
+        :param state:
+        :param new_state:
+        :param player:
+        :param opponent:
+        :return:
+        """
+        return sum(max(state.payoff[x] - new_state.payoff[x] + (self.threat_enable_epsilon if player != x else 0), 0) for x in
+                   new_state.coalition & state.coalition - {opponent})
+
+    def sum_of_gains(self, state: GameNode, new_state: GameNode, player: Player, opponent: Player) -> Value:
+        """
+        the collective gain every player in the new coalition (except opponent) can give to make up for
+        accumulated losses to other players
+        :param state:
+        :param new_state:
+        :param player:
+        :param opponent:
+        :return:
+        """
+        return sum(
+            max(new_state.payoff[x] - state.payoff[x] - (self.threat_help_epsilon if x != player else 0), 0) for x
+            in new_state.coalition - {opponent})
+
     def filter_incredible_states(self, state: GameNode, player: Player, opponent: Player,
                                  threat_states: Set[GameNode]) -> Set[GameNode]:
         all_where_credible: Set[GameNode] = set()
         for new_state in threat_states:
             if state is new_state:
                 continue
-            sum_of_losses = sum(
-                max(state.payoff[x] - new_state.payoff[x], 0) for x in
-                new_state.coalition & state.coalition - {opponent})
+            sum_of_losses = self.sum_of_losses(state, new_state, player, opponent)
             # all losses accumulated by all players except opponent
-            sum_of_gains = sum(
-                max(new_state.payoff[x] - state.payoff[x] - (self.threat_help_epsilon if x != player else 0), 0) for x
-                in new_state.coalition - {opponent})
+            sum_of_gains = self.sum_of_gains(state, new_state, player, opponent)
             # all gains accumulated by all players except opponent
 
             # sum of losses of all players who's agreement is needed in order to switch from state to new_state
@@ -72,32 +97,13 @@ class LeverageGraph(GameGraph):
             if init_treat <= 0:
                 continue
             threat = init_treat
-            player_marginal = i.payoff[player] - state.payoff[player]
-            for j in all_without_player:
-                # sum of how much each player prefers i to j
-                # and how much player can add to them while remaining profitable
-                # in order to counter any offer from opponent
-                if i.coalition & j.coalition:
-                    # if there is any overlap between the coalitions, it is enough for player to convince the
-                    # overlapping players not to switch from i to j
-                    accumulated = sum(i.payoff[x] - j.payoff[x] for x in j.coalition & i.coalition) + \
-                                  player_marginal
-
-                else:
-                    # if there is no overlap, player must pay the difference to all players in j in order
-                    # to prevent offers from opponent
-                    accumulated = player_marginal - j.value + i.payoff[opponent]
-                    if accumulated < 0:
-                        # player cant prevent moving to j
-                        accumulated = 0
-                # for every coalition with opponent and without player
-                # subtract how much other players in both coalitions prefer this option (plus how much player can add)
-                # from how much does the opponent gain from j relative to i (spare opponent gains)
-                # if opponent can pay all players in the coalition the difference and still come out on top
-                # then player must subtract what remains from the threat in order for it to still pay off for opponent
-
-                op_remain = j.payoff[opponent] - i.payoff[opponent] - accumulated
-                threat = min(threat, init_treat - op_remain)
+            for j in self.filter_incredible_states(i, opponent, player, all_without_player):
+                accumulated = self.sum_of_losses(i, j, opponent, player)
+                opponent_margin = max(j.payoff[opponent] - i.payoff[opponent] - accumulated, 0)
+                # how much opponent has after compensating all losses, assuming he compensates first
+                # because he demanded the move
+                # (sometimes he will not be able to compensate alone, so in that case his marginal profit is 0)
+                threat = min(threat, init_treat - opponent_margin)
                 if threat <= 0:
                     break
             else:
